@@ -30,6 +30,9 @@ trait HasPermissionInheritance
             }
         };
 
+        // Keep all the inherited objects in here.
+        $inheritedCollection = [];
+
         foreach ($permissions as $row) {
 
             // permissions without inherit ids
@@ -43,13 +46,27 @@ trait HasPermissionInheritance
                 continue;
             }
 
-            // process inherit_id recursively
-            $inherited = $this->getRecursiveInherit($row->inherit_id, $row->slug);
+            // Get the base object of the inherited id
+            if (isset($inheritedCollection[$row->inherit_id])) {
+                $inherited = $inheritedCollection[$row->inherit_id];
+            } else {
+                // process inherit_id recursively
+                $inheritedCollection[$row->inherit_id] = $inherited = $this->getRecursiveInherit($row->inherit_id, $row->slug);
+            }
+
             $merge = $permissions->where('name', $row->name)->lists('slug', 'name');
 
             // fix for l5.1 and backward compatibility.
             // lists() method should return as an array.
             $merge = $this->collectionAsArray($merge);
+
+            // Because we can change our permissions per user, we are required to change the permission name to a
+            // single-slug value.
+            if (($mergeKey = key($merge)) && ($inheritKey = key($inherited)) && $mergeKey !== $inheritKey) {
+                // Set the value from the $mergeKey (our own permission name)
+                $merge[$inheritKey] = $merge[$mergeKey];
+
+            }
 
             // replace and merge permissions
             $rights = array_replace_recursive($rights, $inherited, $merge);
@@ -57,7 +74,7 @@ trait HasPermissionInheritance
             // make sure we don't unset if
             // inherited & slave permission
             // have same names
-            if ( key($inherited) != $row->name )
+            if ( $inheritKey != $row->name )
                 unset($rights[$row->name]);
 
         }
